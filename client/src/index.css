@@ -1,0 +1,124 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+
+  /* Brand colors */
+  --color-primary-50:  #eff4ff;
+  --color-primary-100: #dce8fd;
+  --color-primary-200: #bfd3fb;
+  --color-primary-400: #6699f5;
+  --color-primary-500: #4f7ef7;
+  --color-primary-600: #3b6af0;
+  --color-primary-700: #2c56d6;
+
+  --color-brand-green-50:  #f0fdf4;
+  --color-brand-green-100: #dcfce7;
+  --color-brand-green-500: #22c55e;
+  --color-brand-green-600: #16a34a;
+
+  --color-surface:    #ffffff;
+  --color-base:       #f7f7f5;
+  --color-muted:      #f0eff8;
+  --color-hover:      #eeedfb;
+
+  --color-border-light:  #e8e8f0;
+  --color-border-medium: #d4d4e8;
+
+  --color-text-primary:   #1a1a2e;
+  --color-text-secondary: #4a5568;
+  --color-text-muted:     #9098a9;
+
+  --radius-card: 16px;
+  --radius-xl:   22px;
+
+  --shadow-card: 0 2px 8px rgba(0,0,0,0.06), 0 1px 3px rgba(0,0,0,0.04);
+  --shadow-card-hover: 0 4px 20px rgba(0,0,0,0.08), 0 2px 6px rgba(0,0,0,0.04);
+  --shadow-blue: 0 4px 20px rgba(79,126,247,0.28);
+}
+
+/* ── Base layer ── */
+@layer base {
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    font-family: var(--font-sans);
+    background-color: #f7f7f5;
+    color: #1a1a2e;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-sans);
+    font-weight: 700;
+    color: #1a1a2e;
+    line-height: 1.2;
+    letter-spacing: -0.02em;
+  }
+
+  a { text-decoration: none; }
+
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #d4d4e8; border-radius: 9999px; }
+  ::-webkit-scrollbar-thumb:hover { background: #9098a9; }
+}
+
+/* ── Component layer ── */
+@layer components {
+  /* Clerk overrides */
+  .cl-rootBox { font-family: var(--font-sans) !important; }
+  .cl-card {
+    border-radius: 22px !important;
+    box-shadow: 0 8px 40px rgba(0,0,0,0.1) !important;
+    border: 1px solid #e8e8f0 !important;
+  }
+  .cl-headerTitle { font-family: var(--font-sans) !important; font-weight: 700 !important; }
+  .cl-formButtonPrimary {
+    background: #4f7ef7 !important;
+    border-radius: 10px !important;
+    font-weight: 600 !important;
+    box-shadow: 0 4px 20px rgba(79,126,247,0.28) !important;
+  }
+  .cl-formButtonPrimary:hover { background: #3b6af0 !important; }
+  .cl-socialButtonsBlockButton { border-radius: 10px !important; border: 1.5px solid #d4d4e8 !important; }
+}
+
+/* ── Utilities layer ── */
+@layer utilities {
+  @keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(20px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
+  @keyframes slideInLeft {
+    from { opacity: 0; transform: translateX(-24px); }
+    to   { opacity: 1; transform: translateX(0); }
+  }
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+
+  .animate-fade-in-up  { animation: fadeInUp 0.5s ease forwards; }
+  .animate-fade-in     { animation: fadeIn 0.4s ease forwards; }
+  .animate-slide-in    { animation: slideInLeft 0.4s ease forwards; }
+  .animate-spin-slow   { animation: spin 0.7s linear infinite; }
+  .animate-pulse-dot   { animation: pulse-dot 2s ease-in-out infinite; }
+
+  .delay-100 { animation-delay: 100ms; }
+  .delay-200 { animation-delay: 200ms; }
+  .delay-300 { animation-delay: 300ms; }
+  .delay-400 { animation-delay: 400ms; }
+}
