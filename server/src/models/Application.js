@@ -1,18 +1,17 @@
 /**
- * Application.js — Milestone 4.2
+ * Application.js
  *
- * Aggregated application record. Groups all emails from the same hiring
- * process (same company + user) into a single trackable Application.
+ * Aggregated application record. Groups CandidateEmail records by
+ * { userId, company, role } into a single trackable Application.
  *
  * ══════════════════════════════════════════════════════════════════════════
- * Grouping key:  { userId, companyName }
+ * Grouping key: { userId, company, role }
  *
- * One Application per company per user, regardless of:
- *   - Which platform the emails arrived from (LinkedIn, Xobin, Direct, etc.)
- *   - How many emails belong to the process
+ * Multiple applications for the same company are allowed if roles differ.
+ * e.g. "Google / SWE L4" and "Google / PM" are separate Application records.
  *
- * This model is created/updated by applicationAggregator.js at the end
- * of every Gmail sync.
+ * Created/updated by: applicationAggregator at the end of every sync.
+ * Read by:            applicationsController (dashboard)
  * ══════════════════════════════════════════════════════════════════════════
  *
  * @module models/Application
@@ -22,46 +21,36 @@ const mongoose = require('mongoose')
 
 const ApplicationSchema = new mongoose.Schema(
   {
-    // ── Identity ─────────────────────────────────────────────────────────────
+    // ── Grouping key ──────────────────────────────────────────────────────────
 
-    /** Clerk user ID. Links this application to a Clario user. */
+    /** Clerk user ID */
     userId: {
       type:     String,
       required: true,
       index:    true,
     },
 
-    /**
-     * Normalized company name extracted by companyExtractor.
-     * This is the grouping key — all emails with the same companyName
-     * are merged into this record.
-     */
-    companyName: {
+    /** Company name extracted by NLP */
+    company: {
       type:     String,
       required: true,
       index:    true,
     },
 
-    // ── Platform ──────────────────────────────────────────────────────────────
-
     /**
-     * Application platform — where most emails originated from.
-     * Resolved using platform priority:
-     *   Direct > ATS/Assessment > Job Board > Unknown
-     *
-     * Examples: 'Direct', 'LinkedIn', 'Xobin', 'HackerRank', 'Indeed'
+     * Job role/title. Null means role could not be determined.
+     * An application can exist with a null role — aggregated on company alone.
      */
-    platform: {
+    role: {
       type:    String,
-      default: 'Unknown',
+      default: null,
     },
 
-    // ── Current Stage ─────────────────────────────────────────────────────────
+    // ── Current stage ─────────────────────────────────────────────────────────
 
     /**
-     * The most advanced/recent hiring stage seen across all emails
-     * for this application.
-     * Updated every sync by applicationAggregator.
+     * Most recent non-UNKNOWN hiring stage across all candidate emails.
+     * Updated on every sync by applicationAggregator.
      */
     currentStage: {
       type:    String,
@@ -70,9 +59,7 @@ const ApplicationSchema = new mongoose.Schema(
       index:   true,
     },
 
-    /**
-     * Confidence of the currentStage classification.
-     */
+    /** Confidence of the currentStage classification */
     currentStageConfidence: {
       type:    String,
       enum:    ['high', 'medium', 'low'],
@@ -81,46 +68,35 @@ const ApplicationSchema = new mongoose.Schema(
 
     // ── Email aggregation metadata ─────────────────────────────────────────────
 
-    /** Total number of job-related emails from this company. */
+    /** Total number of job-related emails for this application */
     emailCount: {
       type:    Number,
       default: 1,
     },
 
-    /** Date of the earliest email from this company. */
+    /** Date of the earliest email */
     firstEmailDate: {
       type:    Date,
       default: null,
     },
 
     /**
-     * Date of the most recent email from this company.
-     * This is the value shown in the "Last Update" column on the dashboard.
+     * Date of the most recent email.
+     * Dashboard sorts by this column — indexed.
      */
     lastEmailDate: {
       type:    Date,
       default: null,
-      index:   true,      // Indexed — dashboard sorts by most recently active
-    },
-
-    /**
-     * Array of JobEmailCandidate ObjectIds that belong to this application.
-     * Used for drill-down view (future Milestone 5 email timeline).
-     * Limited to 50 most recent to avoid unbounded document growth.
-     */
-    sourceEmails: {
-      type:    [mongoose.Schema.Types.ObjectId],
-      ref:     'JobEmailCandidate',
-      default: [],
+      index:   true,
     },
   },
   {
-    timestamps: true,     // createdAt + updatedAt managed by Mongoose
+    timestamps: true,   // createdAt + updatedAt
   }
 )
 
-// ── Compound unique index ──────────────────────────────────────────────────────
-// One application per (user, company). Aggregator upserts on this key.
-ApplicationSchema.index({ userId: 1, companyName: 1 }, { unique: true })
+// ── Compound unique index: one application per (user, company, role) ───────────
+// role: null is treated as a distinct value in MongoDB — this is intentional.
+ApplicationSchema.index({ userId: 1, company: 1, role: 1 }, { unique: true })
 
 module.exports = mongoose.model('Application', ApplicationSchema)

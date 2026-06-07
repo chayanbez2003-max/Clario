@@ -2,6 +2,8 @@ const GmailIntegration = require('../models/GmailIntegration')
 const gmailAuthService = require('../services/gmail/gmailAuthService')
 const { createGmailClient } = require('../services/gmail/gmailClientFactory')
 const { fetchRecentEmails } = require('../services/gmail/gmailReaderService')
+const { runManualSync }    = require('../services/sync/index')
+const { classifyNoise }    = require('../services/noise/noiseFilter')
 
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173'
 
@@ -211,4 +213,106 @@ const verifyConnection = async (req, res) => {
   }
 }
 
-module.exports = { getConnectUrl, handleCallback, getStatus, verifyConnection }
+// ─────────────────────────────────────────────────────────────
+// POST /api/gmail/sync
+// Body: { clerkId }
+// Runs the full email sync pipeline for a user.
+// Returns sync metrics: emailsScanned, noisyFiltered, sentToNlp,
+// successfullyProcessed, duplicatesSkipped, failed, aggregation.
+// ─────────────────────────────────────────────────────────────
+const manualSync = async (req, res) => {
+  try {
+    const { clerkId } = req.body
+
+    if (!clerkId) {
+      return res.status(400).json({ success: false, message: 'clerkId is required' })
+    }
+
+    const metrics = await runManualSync(clerkId)
+
+    return res.json({ success: true, data: metrics })
+  } catch (err) {
+    console.error('[gmailController] manualSync error:', err)
+
+    const isAuthError = err.code === 401 || err.message?.includes('invalid_grant')
+    if (isAuthError) {
+      return res.status(401).json({
+        success: false,
+        message: 'Gmail token is expired or revoked. Please reconnect Gmail.',
+      })
+    }
+
+    const isConnectError = err.message?.includes('not connected') ||
+                           err.message?.includes('Refresh token missing')
+    if (isConnectError) {
+      return res.status(400).json({ success: false, message: err.message })
+    }
+
+    return res.status(500).json({ success: false, message: 'Sync failed. Please try again.' })
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+// GET /api/gmail/noise-preview?clerkId=xxx
+// Diagnostic: fetches 30 emails and runs noise filter on each.
+// Returns full classification results WITHOUT saving anything.
+// Use this to verify the filter is working on your actual inbox.
+// ─────────────────────────────────────────────────────────────
+const noisePreview = async (req, res) => {
+  try {
+    const { clerkId } = req.query
+    if (!clerkId) {
+      return res.status(400).json({ success: false, message: 'clerkId is required' })
+    }
+
+    const integration = await GmailIntegration
+      .findOne({ userId: clerkId })
+      .select('+refreshToken')
+
+    if (!integration?.refreshToken) {
+      return res.status(400).json({ success: false, message: 'Gmail not connected' })
+    }
+
+    const gmailClient = createGmailClient(integration.refreshToken)
+    const emails      = await fetchRecentEmails(gmailClient, 30)
+
+    const results = emails.map((email) => {
+      const noise = classifyNoise({
+        subject: email.subject,
+        snippet: email.snippet,
+        sender:  email.sender,
+      })
+      return {
+        subject:    email.subject,
+        sender:     email.sender,
+        snippet:    email.snippet?.slice(0, 80),
+        isNoisy:    noise.isNoisy,
+        category:   noise.category,
+        confidence: noise.confidence,
+        reason:     noise.reasons[0],
+      }
+    })
+
+    const noisyCount  = results.filter((r) => r.isNoisy).length
+    const categories  = results.reduce((acc, r) => {
+      acc[r.category] = (acc[r.category] || 0) + 1
+      return acc
+    }, {})
+
+    return res.json({
+      success: true,
+      data: {
+        total:       results.length,
+        noisyCount,
+        cleanCount:  results.length - noisyCount,
+        categories,
+        emails:      results,
+      },
+    })
+  } catch (err) {
+    console.error('[gmailController] noisePreview error:', err)
+    return res.status(500).json({ success: false, message: err.message })
+  }
+}
+
+module.exports = { getConnectUrl, handleCallback, getStatus, verifyConnection, manualSync, noisePreview }

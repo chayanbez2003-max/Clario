@@ -3,7 +3,7 @@ import axios from 'axios'
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000'
 
 const api = axios.create({
-  baseURL: `${API_BASE}/api/applications`,
+  baseURL:         `${API_BASE}/api/applications`,
   withCredentials: true,
 })
 
@@ -11,7 +11,7 @@ const api = axios.create({
  * getApplications
  *
  * Fetches all aggregated Application records for the user.
- * Records are sorted by lastEmailDate desc (most recently active first).
+ * Sorted by lastEmailDate desc (most recently active first).
  *
  * @param {string} clerkId
  * @returns {Promise<{
@@ -20,8 +20,8 @@ const api = axios.create({
  *     total: number,
  *     applications: Array<{
  *       _id: string,
- *       companyName: string,
- *       platform: string,
+ *       company: string,
+ *       role: string | null,
  *       currentStage: string,
  *       currentStageConfidence: string,
  *       emailCount: number,

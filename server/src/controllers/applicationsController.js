@@ -1,8 +1,8 @@
 /**
- * applicationsController.js — Milestone 4.2
+ * applicationsController.js
  *
- * Endpoints for the aggregated Application records.
- * Reads from the Application collection (pre-computed by applicationAggregator).
+ * Endpoints for aggregated Application records.
+ * Reads from the Application collection (rebuilt by applicationAggregator after each sync).
  */
 
 const Application = require('../models/Application')
@@ -10,8 +10,7 @@ const Application = require('../models/Application')
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/applications?clerkId=xxx
 //
-// Returns all aggregated Application records for the user,
-// sorted by lastEmailDate descending (most recently active first).
+// Returns all Application records for the user, sorted by lastEmailDate desc.
 //
 // Response:
 //   {
@@ -20,7 +19,7 @@ const Application = require('../models/Application')
 //       total: number,
 //       applications: [
 //         {
-//           _id, companyName, platform, currentStage, currentStageConfidence,
+//           _id, company, role, currentStage, currentStageConfidence,
 //           emailCount, firstEmailDate, lastEmailDate, createdAt, updatedAt
 //         }
 //       ]
@@ -37,14 +36,14 @@ const getApplications = async (req, res) => {
 
     const applications = await Application
       .find({ userId: clerkId })
-      .select('-sourceEmails -__v')     // Exclude heavy ref array + version key
-      .sort({ lastEmailDate: -1 })      // Most recently active first
+      .select('-__v')
+      .sort({ lastEmailDate: -1 })
       .lean()
 
     return res.json({
       success: true,
       data: {
-        total:        applications.length,
+        total: applications.length,
         applications,
       },
     })

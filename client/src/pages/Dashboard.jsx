@@ -1,7 +1,11 @@
-import { useUser, UserButton } from '@clerk/clerk-react'
+import { useState } from 'react'
+import { useUser, useAuth, UserButton } from '@clerk/clerk-react'
 import Sidebar from '../components/Sidebar'
 import GmailConnectionCard from '../components/GmailConnectionCard'
 import { useGmailStatus } from '../hooks/useGmailStatus'
+import { useApplications } from '../hooks/useApplications'
+import { useStageStatistics } from '../hooks/useStageStatistics'
+import { triggerSync } from '../api/gmailApi'
 import {
   HiOutlineRefresh,
   HiOutlineDocumentText,
@@ -9,64 +13,115 @@ import {
   HiOutlineChartBar,
   HiOutlineLightningBolt,
   HiOutlineBell,
+  HiOutlineCheckCircle,
+  HiOutlineExclamationCircle,
 } from 'react-icons/hi'
 
+// ── Stage badge colours ───────────────────────────────────────────────────────
+const STAGE_STYLES = {
+  APPLIED:    { bg: 'bg-blue-50',   text: 'text-blue-700',   dot: 'bg-blue-400'   },
+  ASSESSMENT: { bg: 'bg-amber-50',  text: 'text-amber-700',  dot: 'bg-amber-400'  },
+  INTERVIEW:  { bg: 'bg-purple-50', text: 'text-purple-700', dot: 'bg-purple-400' },
+  OFFER:      { bg: 'bg-green-50',  text: 'text-green-700',  dot: 'bg-green-400'  },
+  REJECTED:   { bg: 'bg-red-50',    text: 'text-red-600',    dot: 'bg-red-400'    },
+  HIRED:      { bg: 'bg-emerald-50',text: 'text-emerald-700',dot: 'bg-emerald-400'},
+  WITHDRAWN:  { bg: 'bg-gray-50',   text: 'text-gray-500',   dot: 'bg-gray-400'   },
+  UNKNOWN:    { bg: 'bg-[#f0eff8]', text: 'text-[#9098a9]',  dot: 'bg-[#9098a9]'  },
+}
+
+function StageBadge({ stage }) {
+  const s = STAGE_STYLES[stage] || STAGE_STYLES.UNKNOWN
+  return (
+    <span className={`inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full ${s.bg} ${s.text}`}>
+      <span className={`w-1.5 h-1.5 rounded-full ${s.dot}`} />
+      {stage || 'UNKNOWN'}
+    </span>
+  )
+}
+
 export default function Dashboard() {
-  const { user } = useUser()
-  const firstName = user?.firstName || 'there'
+  const { user }                   = useUser()
+  console.log("Clerk User ID:", user?.id);
+  const { userId }                 = useAuth()
+  const firstName                  = user?.firstName || 'there'
 
   const { status: gmailStatus, loading: gmailLoading, refetch: refetchGmail } = useGmailStatus()
+  const { applications, total, loading: appsLoading, refetch: refetchApps }  = useApplications()
+  const { stats, refetch: refetchStats }                                       = useStageStatistics()
+
+  const [syncing,     setSyncing]     = useState(false)
+  const [syncResult,  setSyncResult]  = useState(null)
+  const [syncError,   setSyncError]   = useState(null)
 
   // Determine time of day greeting
-  const hour = new Date().getHours()
+  const hour     = new Date().getHours()
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'
 
+  // ── Sync handler ─────────────────────────────────────────────────────────────
+  const handleSync = async () => {
+    if (!userId || syncing) return
+    setSyncing(true)
+    setSyncResult(null)
+    setSyncError(null)
+    try {
+      const res = await triggerSync(userId)
+      setSyncResult(res.data)
+      // Refresh downstream data
+      await Promise.all([refetchGmail(), refetchApps(), refetchStats()])
+    } catch (err) {
+      setSyncError(err?.response?.data?.message || 'Sync failed. Please try again.')
+    } finally {
+      setSyncing(false)
+    }
+  }
+
+  // ── Stat cards ────────────────────────────────────────────────────────────────
   const statCards = [
     {
-      id: 'last-sync',
-      label: 'Last Sync',
-      value: gmailStatus?.lastSyncAt
+      id:        'last-sync',
+      label:     'Last Sync',
+      value:     gmailStatus?.lastSyncAt
         ? new Date(gmailStatus.lastSyncAt).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' })
         : 'Never',
-      iconBg: 'bg-[#f0fdf4]',
+      iconBg:    'bg-[#f0fdf4]',
       iconColor: 'text-[#16a34a]',
-      Icon: HiOutlineRefresh,
+      Icon:      HiOutlineRefresh,
       badgeText: gmailStatus?.lastSyncAt ? 'Synced' : 'Never synced',
-      badgeCls: gmailStatus?.lastSyncAt ? 'bg-[#f0fdf4] text-[#16a34a]' : 'bg-[#f0eff8] text-[#9098a9]',
-      dot: gmailStatus?.lastSyncAt ? 'bg-[#22c55e]' : 'bg-[#9098a9]',
+      badgeCls:  gmailStatus?.lastSyncAt ? 'bg-[#f0fdf4] text-[#16a34a]' : 'bg-[#f0eff8] text-[#9098a9]',
+      dot:       gmailStatus?.lastSyncAt ? 'bg-[#22c55e]' : 'bg-[#9098a9]',
     },
     {
-      id: 'applications-count',
-      label: 'Applications',
-      value: '0',
-      iconBg: 'bg-[#eff4ff]',
+      id:        'applications-count',
+      label:     'Applications',
+      value:     total,
+      iconBg:    'bg-[#eff4ff]',
       iconColor: 'text-[#4f7ef7]',
-      Icon: HiOutlineDocumentText,
-      badgeText: 'No data yet',
-      badgeCls: 'bg-[#eff4ff] text-[#4f7ef7]',
-      dot: 'bg-[#4f7ef7]',
+      Icon:      HiOutlineDocumentText,
+      badgeText: total > 0 ? `${total} tracked` : 'No data yet',
+      badgeCls:  'bg-[#eff4ff] text-[#4f7ef7]',
+      dot:       'bg-[#4f7ef7]',
     },
     {
-      id: 'emails-processed',
-      label: 'Emails Processed',
-      value: gmailStatus?.emailsProcessed ?? '—',
-      iconBg: 'bg-[#fef3c7]',
+      id:        'emails-processed',
+      label:     'Emails Processed',
+      value:     gmailStatus?.emailsProcessed ?? '—',
+      iconBg:    'bg-[#fef3c7]',
       iconColor: 'text-[#92400e]',
-      Icon: HiOutlineChartBar,
+      Icon:      HiOutlineChartBar,
       badgeText: 'Lifetime',
-      badgeCls: 'bg-[#fef3c7] text-[#92400e]',
-      dot: 'bg-[#f59e0b]',
+      badgeCls:  'bg-[#fef3c7] text-[#92400e]',
+      dot:       'bg-[#f59e0b]',
     },
     {
-      id: 'review-queue',
-      label: 'Review Queue',
-      value: '0',
-      iconBg: 'bg-[#f0eff8]',
-      iconColor: 'text-[#9098a9]',
-      Icon: HiOutlineClipboardList,
-      badgeText: 'Queue empty',
-      badgeCls: 'bg-[#f0eff8] text-[#9098a9]',
-      dot: 'bg-[#9098a9]',
+      id:        'interview-count',
+      label:     'In Interview',
+      value:     stats?.interview ?? '—',
+      iconBg:    'bg-[#f5f0ff]',
+      iconColor: 'text-[#7c3aed]',
+      Icon:      HiOutlineClipboardList,
+      badgeText: stats?.interview > 0 ? 'Active' : 'None yet',
+      badgeCls:  stats?.interview > 0 ? 'bg-[#f5f0ff] text-[#7c3aed]' : 'bg-[#f0eff8] text-[#9098a9]',
+      dot:       stats?.interview > 0 ? 'bg-[#7c3aed]' : 'bg-[#9098a9]',
     },
   ]
 
@@ -84,7 +139,23 @@ export default function Dashboard() {
             </div>
             <span className="font-bold text-[#1a1a2e] text-base tracking-tight">Clario</span>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
+            {/* Manual Sync button */}
+            {gmailStatus?.connected && (
+              <button
+                id="manual-sync-btn"
+                onClick={handleSync}
+                disabled={syncing}
+                className={`flex items-center gap-2 text-xs font-semibold px-4 py-2 rounded-xl transition-all duration-150
+                  ${syncing
+                    ? 'bg-[#f0eff8] text-[#9098a9] cursor-not-allowed'
+                    : 'bg-[#4f7ef7] text-white hover:bg-[#3b6be8] shadow-sm hover:shadow-md'
+                  }`}
+              >
+                <HiOutlineRefresh className={`text-sm ${syncing ? 'animate-spin' : ''}`} />
+                {syncing ? 'Syncing…' : 'Sync Now'}
+              </button>
+            )}
             <button
               id="notifications-btn"
               className="w-9 h-9 rounded-xl bg-[#f0eff8] flex items-center justify-center text-[#9098a9] hover:bg-[#eeedfb] hover:text-[#4f7ef7] transition-all duration-150"
@@ -108,7 +179,27 @@ export default function Dashboard() {
             </p>
           </div>
 
-          {/* Gmail connection card — live, always first */}
+          {/* Sync result / error banner */}
+          {syncResult && (
+            <div className="flex items-start gap-3 p-4 rounded-2xl bg-[#f0fdf4] border border-[#dcfce7] mb-6 animate-fade-in">
+              <HiOutlineCheckCircle className="text-[#16a34a] text-lg flex-shrink-0 mt-0.5" />
+              <div className="text-xs text-[#4a5568]">
+                <p className="font-semibold text-[#16a34a] mb-1">Sync complete</p>
+                <span className="font-medium">{syncResult.emailsScanned}</span> scanned &nbsp;·&nbsp;
+                <span className="font-medium">{syncResult.noisyFiltered}</span> noise filtered &nbsp;·&nbsp;
+                <span className="font-medium">{syncResult.successfullyProcessed}</span> saved &nbsp;·&nbsp;
+                <span className="font-medium">{syncResult.duplicatesSkipped}</span> dupes skipped
+              </div>
+            </div>
+          )}
+          {syncError && (
+            <div className="flex items-start gap-3 p-4 rounded-2xl bg-red-50 border border-red-100 mb-6 animate-fade-in">
+              <HiOutlineExclamationCircle className="text-red-400 text-lg flex-shrink-0 mt-0.5" />
+              <p className="text-xs text-red-600 font-medium">{syncError}</p>
+            </div>
+          )}
+
+          {/* Gmail connection card */}
           <div className="mb-6 animate-fade-in-up delay-100">
             <GmailConnectionCard
               status={gmailStatus}
@@ -147,15 +238,17 @@ export default function Dashboard() {
             <div className="px-6 py-4 border-b border-[#e8e8f0] flex items-center justify-between">
               <div>
                 <h2 className="text-sm font-semibold text-[#1a1a2e]">Recent Applications</h2>
-                <p className="text-xs text-[#9098a9] mt-0.5">Applications parsed from Gmail will appear here</p>
+                <p className="text-xs text-[#9098a9] mt-0.5">Grouped by company and role from your Gmail</p>
               </div>
-              <span className="text-xs bg-[#f0eff8] text-[#9098a9] px-3 py-1 rounded-full font-medium">0 total</span>
+              <span className="text-xs bg-[#f0eff8] text-[#9098a9] px-3 py-1 rounded-full font-medium">
+                {appsLoading ? '…' : `${total} total`}
+              </span>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead className="bg-[#f7f7f5]">
                   <tr>
-                    {['Company', 'Role', 'Status', 'Last Updated'].map((h) => (
+                    {['Company', 'Role', 'Stage', 'Emails', 'Last Update'].map((h) => (
                       <th key={h} className="px-6 py-3 text-left text-xs font-semibold text-[#9098a9] uppercase tracking-widest border-b border-[#e8e8f0]">
                         {h}
                       </th>
@@ -163,43 +256,77 @@ export default function Dashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  <tr>
-                    <td colSpan={4} className="text-center py-16">
-                      <div className="flex flex-col items-center gap-3">
-                        <div className="w-12 h-12 rounded-2xl bg-[#f0eff8] flex items-center justify-center">
-                          <HiOutlineDocumentText className="text-xl text-[#9098a9]" />
+                  {appsLoading ? (
+                    <tr>
+                      <td colSpan={5} className="text-center py-12 text-sm text-[#9098a9]">Loading…</td>
+                    </tr>
+                  ) : applications.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="text-center py-16">
+                        <div className="flex flex-col items-center gap-3">
+                          <div className="w-12 h-12 rounded-2xl bg-[#f0eff8] flex items-center justify-center">
+                            <HiOutlineDocumentText className="text-xl text-[#9098a9]" />
+                          </div>
+                          <p className="text-sm font-medium text-[#4a5568]">No applications yet</p>
+                          <p className="text-xs text-[#9098a9]">
+                            {gmailStatus?.connected
+                              ? 'Click "Sync Now" to start tracking'
+                              : 'Connect Gmail to start auto-tracking applications'}
+                          </p>
                         </div>
-                        <p className="text-sm font-medium text-[#4a5568]">No applications yet</p>
-                        <p className="text-xs text-[#9098a9]">
-                          {gmailStatus?.connected
-                            ? 'Verify your Gmail connection to start tracking'
-                            : 'Connect Gmail to start auto-tracking applications'}
-                        </p>
-                      </div>
-                    </td>
-                  </tr>
+                      </td>
+                    </tr>
+                  ) : (
+                    applications.map((app) => (
+                      <tr key={app._id} className="border-t border-[#f0eff8] hover:bg-[#fafafa] transition-colors duration-100">
+                        <td className="px-6 py-3 text-sm font-semibold text-[#1a1a2e]">{app.company || '—'}</td>
+                        <td className="px-6 py-3 text-sm text-[#4a5568]">{app.role || <span className="text-[#9098a9] italic">Unknown</span>}</td>
+                        <td className="px-6 py-3"><StageBadge stage={app.currentStage} /></td>
+                        <td className="px-6 py-3 text-sm text-[#9098a9]">{app.emailCount}</td>
+                        <td className="px-6 py-3 text-xs text-[#9098a9]">
+                          {app.lastEmailDate
+                            ? new Date(app.lastEmailDate).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' })
+                            : '—'}
+                        </td>
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>
           </div>
 
-          {/* Analytics placeholder */}
-          <div
-            id="analytics-placeholder"
-            className="bg-white rounded-2xl border border-[#e8e8f0] p-6 shadow-[0_2px_8px_rgba(0,0,0,0.05)] animate-fade-in-up delay-300"
-          >
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <h2 className="text-sm font-semibold text-[#1a1a2e]">Analytics Overview</h2>
-                <p className="text-xs text-[#9098a9] mt-0.5">Charts and insights will appear after Gmail sync</p>
+          {/* Pipeline funnel */}
+          {stats && stats.total > 0 && (
+            <div
+              id="pipeline-funnel"
+              className="bg-white rounded-2xl border border-[#e8e8f0] p-6 shadow-[0_2px_8px_rgba(0,0,0,0.05)] animate-fade-in-up delay-300"
+            >
+              <div className="flex items-center justify-between mb-5">
+                <div>
+                  <h2 className="text-sm font-semibold text-[#1a1a2e]">Pipeline Overview</h2>
+                  <p className="text-xs text-[#9098a9] mt-0.5">{stats.total} applications tracked</p>
+                </div>
+                <HiOutlineChartBar className="text-xl text-[#9098a9]" />
               </div>
-              <HiOutlineChartBar className="text-xl text-[#9098a9]" />
+              <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
+                {[
+                  { label: 'Applied',    count: stats.applied,    color: 'bg-blue-400'   },
+                  { label: 'Assessment', count: stats.assessment, color: 'bg-amber-400'  },
+                  { label: 'Interview',  count: stats.interview,  color: 'bg-purple-400' },
+                  { label: 'Offer',      count: stats.offer,      color: 'bg-green-400'  },
+                  { label: 'Hired',      count: stats.hired,      color: 'bg-emerald-400'},
+                  { label: 'Rejected',   count: stats.rejected,   color: 'bg-red-400'    },
+                ].map(({ label, count, color }) => (
+                  <div key={label} className="flex flex-col items-center gap-1.5 p-3 rounded-xl bg-[#f7f7f5]">
+                    <span className={`w-2.5 h-2.5 rounded-full ${color}`} />
+                    <span className="text-lg font-bold text-[#1a1a2e]">{count}</span>
+                    <span className="text-xs text-[#9098a9] text-center">{label}</span>
+                  </div>
+                ))}
+              </div>
             </div>
-            <div className="h-40 rounded-xl bg-[#f7f7f5] border border-dashed border-[#d4d4e8] flex flex-col items-center justify-center gap-2">
-              <HiOutlineChartBar className="text-2xl text-[#d4d4e8]" />
-              <p className="text-xs text-[#9098a9]">Analytics coming soon</p>
-            </div>
-          </div>
+          )}
 
         </main>
       </div>

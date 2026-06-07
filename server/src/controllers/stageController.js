@@ -1,16 +1,34 @@
 /**
  * stageController.js
  *
- * Controller for stage statistics endpoints.
- *
- * Reads hiring pipeline counts from GmailIntegration (pre-computed at sync time)
- * rather than running aggregation queries on JobEmailCandidate on every request.
- * This makes the dashboard load fast regardless of email volume.
+ * Returns hiring pipeline stage counts for the dashboard.
+ * Aggregates live from the Application collection (grouped by currentStage).
+ * No pre-computed counts needed — this is a fast aggregation query.
  */
 
-const GmailIntegration = require('../models/GmailIntegration')
+const Application = require('../models/Application')
 
-
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/stages/statistics?clerkId=xxx
+//
+// Returns current stage counts for the user's applications.
+//
+// Response:
+//   {
+//     success: true,
+//     data: {
+//       applied:    number,
+//       assessment: number,
+//       interview:  number,
+//       offer:      number,
+//       rejected:   number,
+//       hired:      number,
+//       withdrawn:  number,
+//       unknown:    number,
+//       total:      number,
+//     }
+//   }
+// ─────────────────────────────────────────────────────────────────────────────
 const getStageStatistics = async (req, res) => {
   try {
     const { clerkId } = req.query
@@ -22,32 +40,32 @@ const getStageStatistics = async (req, res) => {
       })
     }
 
-    const integration = await GmailIntegration.findOne({ userId: clerkId })
+    // Aggregate stage counts directly from Application collection
+    const stageCounts = await Application.aggregate([
+      { $match: { userId: clerkId } },
+      { $group: { _id: '$currentStage', count: { $sum: 1 } } },
+    ])
 
-    if (!integration) {
-      // No integration yet — return zeros (user hasn't connected Gmail)
-      return res.json({
-        success: true,
-        data: {
-          applied:    0,
-          assessment: 0,
-          interview:  0,
-          offer:      0,
-          rejected:   0,
-        },
-      })
+    // Build a zero-filled result object
+    const data = {
+      applied:    0,
+      assessment: 0,
+      interview:  0,
+      offer:      0,
+      rejected:   0,
+      hired:      0,
+      withdrawn:  0,
+      unknown:    0,
+      total:      0,
     }
 
-    return res.json({
-      success: true,
-      data: {
-        applied:    integration.appliedCount    || 0,
-        assessment: integration.assessmentCount || 0,
-        interview:  integration.interviewCount  || 0,
-        offer:      integration.offerCount      || 0,
-        rejected:   integration.rejectedCount   || 0,
-      },
-    })
+    for (const { _id, count } of stageCounts) {
+      const key = (_id || 'UNKNOWN').toLowerCase()
+      if (key in data) data[key] = count
+      data.total += count
+    }
+
+    return res.json({ success: true, data })
   } catch (err) {
     console.error('[stageController] getStageStatistics error:', err)
     return res.status(500).json({

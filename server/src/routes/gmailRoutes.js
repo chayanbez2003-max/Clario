@@ -5,6 +5,8 @@ const {
   handleCallback,
   getStatus,
   verifyConnection,
+  manualSync,
+  noisePreview,
 } = require('../controllers/gmailController')
 
 // TODO: When Clerk backend token verification is implemented, import requireAuth
@@ -39,5 +41,21 @@ router.get('/status', getStatus)
  * Does NOT persist emails.
  */
 router.post('/verify', verifyConnection)
+
+/**
+ * POST /api/gmail/sync
+ * Body: { clerkId }
+ * Runs the full email sync pipeline.
+ * Returns: { emailsScanned, noisyFiltered, sentToNlp, successfullyProcessed,
+ *            duplicatesSkipped, failed, aggregation }
+ */
+router.post('/sync', manualSync)
+
+/**
+ * GET /api/gmail/noise-preview?clerkId=xxx
+ * Diagnostic: fetches 30 emails, runs noise filter, returns classification.
+ * Does NOT save anything. Use to debug why emails pass through.
+ */
+router.get('/noise-preview', noisePreview)
 
 module.exports = router

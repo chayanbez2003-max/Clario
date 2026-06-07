@@ -42,3 +42,16 @@ export const verifyGmailConnection = async (clerkId) => {
   const { data } = await api.post('/verify', { clerkId })
   return data
 }
+
+/**
+ * triggerSync
+ * Runs the full email sync pipeline for the user.
+ * Returns sync metrics: { emailsScanned, noisyFiltered, sentToNlp,
+ *   successfullyProcessed, duplicatesSkipped, failed, aggregation }
+ *
+ * @param {string} clerkId
+ */
+export const triggerSync = async (clerkId) => {
+  const { data } = await api.post('/sync', { clerkId })
+  return data
+}
